@@ -5,6 +5,7 @@ import (
 	"invoice-ocr-backend/internal/handler"
 	"invoice-ocr-backend/internal/repository"
 	"invoice-ocr-backend/internal/service"
+	"invoice-ocr-backend/pkg/ocr"
 	"invoice-ocr-backend/pkg/storage"
 	"time"
 
@@ -44,9 +45,12 @@ func main() {
 		panic("Failed to connect to MinIO: " + err.Error())
 	}
 
+	// Setup OCR Client
+	ocrClient := ocr.NewClient(cfg.OCRServiceURL, 120*time.Second)
+
 	// Repo -> Service -> Handler
 	invoiceRepo := repository.NewInvoiceRepository(db)
-	invoiceService := service.NewInvoiceService(invoiceRepo, minioClient, cfg)
+	invoiceService := service.NewInvoiceService(invoiceRepo, minioClient, ocrClient)
 	invoiceHandler := handler.NewInvoiceHandler(invoiceService)
 
 	r.GET("/ping", func(ctx *gin.Context) {

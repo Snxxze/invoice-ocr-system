@@ -30,24 +30,55 @@ export function ResultView({ data, onReset }: ResultViewProps) {
       </div>
 
       <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* ฝั่งซ้าย: ข้อมูลไฟล์ */}
-        <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
-          <div className="flex items-center gap-2 mb-4 text-gray-700 font-medium">
-            <FileText className="w-5 h-5 text-gray-400" />
-            File Metadata
+        {/* ฝั่งซ้าย: ข้อมูลไฟล์ + Summary */}
+        <div className="space-y-6">
+          <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
+            <div className="flex items-center gap-2 mb-4 text-gray-700 font-medium">
+              <FileText className="w-5 h-5 text-gray-400" />
+              File Metadata
+            </div>
+            <dl className="space-y-3 text-sm">
+              <div>
+                <dt className="text-gray-500">File Name (MinIO)</dt>
+                <dd className="font-mono text-gray-800 break-all">{data.invoice.file_url}</dd>
+              </div>
+              <div>
+                <dt className="text-gray-500">Status</dt>
+                <dd className="inline-flex px-2 py-1 bg-green-100 text-green-700 rounded-md mt-1">
+                  {data.invoice.status}
+                </dd>
+              </div>
+            </dl>
           </div>
-          <dl className="space-y-3 text-sm">
-            <div>
-              <dt className="text-gray-500">File Name (MinIO)</dt>
-              <dd className="font-mono text-gray-800 break-all">{data.invoice.file_url}</dd>
+
+          {/* สรุปข้อมูลที่ดึงได้ (Highlight ส่วนนี้) */}
+          <div className="bg-blue-50 p-6 rounded-lg border border-blue-100">
+            <h3 className="text-blue-800 font-semibold mb-4">Summary Extractions</h3>
+            <div className="space-y-4">
+              <div className="flex justify-between items-center pb-2 border-b border-blue-100">
+                <span className="text-blue-600 text-sm">รวมทั้งหมด</span>
+                <span className="text-2xl font-bold text-blue-900">{data.ocr_result.summary.total}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-blue-400">ค่าเช่า</p>
+                  <p className="font-medium text-blue-800">{data.ocr_result.summary.rental}</p>
+                </div>
+                <div>
+                  <p className="text-blue-400">ค่าไฟ</p>
+                  <p className="font-medium text-blue-800">{data.ocr_result.summary.electricity}</p>
+                </div>
+                <div>
+                  <p className="text-blue-400">ค่าน้ำ</p>
+                  <p className="font-medium text-blue-800">{data.ocr_result.summary.water}</p>
+                </div>
+                <div>
+                  <p className="text-blue-400">Cable TV</p>
+                  <p className="font-medium text-blue-800">{data.ocr_result.summary.cable_tv}</p>
+                </div>
+              </div>
             </div>
-            <div>
-              <dt className="text-gray-500">Status</dt>
-              <dd className="inline-flex px-2 py-1 bg-green-100 text-green-700 rounded-md mt-1">
-                {data.invoice.status}
-              </dd>
-            </div>
-          </dl>
+          </div>
         </div>
 
         {/* ฝั่งขวา: ผลลัพธ์จาก AI */}
