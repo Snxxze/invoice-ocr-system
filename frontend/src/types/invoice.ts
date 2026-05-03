@@ -12,7 +12,16 @@ export interface OCRWord {
   box: number[][];
 }
 
+export interface OCRSummary {
+  rental: string;
+  electricity: string;
+  water: string;
+  cable_tv: string;
+  total: string;
+}
+
 export interface OCRResult {
+  summary: OCRSummary;
   data: OCRWord[];
 }
 

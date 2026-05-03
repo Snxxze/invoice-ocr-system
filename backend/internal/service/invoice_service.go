@@ -3,28 +3,25 @@ package service
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"fmt"
-	"invoice-ocr-backend/internal/config"
 	"invoice-ocr-backend/internal/models"
 	"invoice-ocr-backend/internal/repository"
+	"invoice-ocr-backend/pkg/ocr"
 	"invoice-ocr-backend/pkg/storage"
 	"io"
 	"mime/multipart"
 	"net/http"
-	"time"
 
 	"github.com/minio/minio-go/v7"
 )
 
 type InvoiceService struct {
-	repo    *repository.InvoiceRepository
-	storage *storage.MinioClient
-	cfg 		*config.Config
+	repo      *repository.InvoiceRepository
+	storage   *storage.MinioClient
+	ocrClient *ocr.Client
 }
 
-func NewInvoiceService(repo *repository.InvoiceRepository, storage *storage.MinioClient, cfg *config.Config) *InvoiceService {
-	return &InvoiceService{repo, storage, cfg}
+func NewInvoiceService(repo *repository.InvoiceRepository, storage *storage.MinioClient, ocrClient *ocr.Client) *InvoiceService {
+	return &InvoiceService{repo, storage, ocrClient}
 }
 
 /**
@@ -56,7 +53,7 @@ func NewInvoiceService(repo *repository.InvoiceRepository, storage *storage.Mini
  * - read once, reuse ทั้ง pipeline
  * - แยก concern: storage / OCR / persistence ชัดเจน
  */
-func (s *InvoiceService) UploadInvoice(file *multipart.FileHeader) (*models.Invoice, interface{}, error) {
+func (s *InvoiceService) UploadInvoice(file *multipart.FileHeader) (*models.Invoice, *models.OCRResponse, error) {
 	ctx := context.Background()
 	
 	src, err := file.Open()
@@ -70,31 +67,32 @@ func (s *InvoiceService) UploadInvoice(file *multipart.FileHeader) (*models.Invo
 		return nil, nil, err
 	}
 
-	// เตรียมข้อมูลสำหรับ MinIO (ใช้ Buffer ที่มีอยู่)
 	data := buf.Bytes()
 	reader := bytes.NewReader(data)
 
-	// Detect ContentType จาก bytes ตรงๆ
 	contentType := http.DetectContentType(data)
 	opts := minio.PutObjectOptions{ContentType: contentType}
 
 	objectName := storage.GenerateFileName(file.Filename)
 
-	// อัปโหลดขึ้น MinIO
 	_, err = s.storage.Client.PutObject(ctx, s.storage.BucketName, objectName, reader, int64(len(data)), opts)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// เรียก OCR Service โดยใช้ Data ชุดเดียวกัน
-	ocrResult, err := s.CallOCR(data, file.Filename)
+	ocrResult, err := s.ocrClient.Extract(data, file.Filename)
 	if err != nil {
-		return nil, nil, fmt.Errorf("OCR failed: %v", err)
+		return nil, nil, err
 	}
 
 	invoice := &models.Invoice{
 		FileUrl: objectName,
-		Status:	"processed",
+		Status:  "processed",
+	}
+	
+	if ocrResult != nil {
+		total := ocrResult.Summary.Total
+		invoice.Total = &total
 	}
 
 	if err := s.repo.Create(invoice); err != nil {
@@ -102,66 +100,4 @@ func (s *InvoiceService) UploadInvoice(file *multipart.FileHeader) (*models.Invo
 	}
 
 	return invoice, ocrResult, nil
-}
-
-/**
- * CallOCR - External OCR Integration
- *
- * Flow:
- * - สร้าง multipart request (แนบไฟล์)
- * - ส่งไป OCR service
- * - รับและแปลง response เป็น JSON
- *
- * Design:
- * - ส่ง data เป็น byte (ไม่ reopen file / ลด I/O)
- * - ใช้ timeout กัน request ค้าง (network / OCR ช้า)
- *
- * Contract:
- * - OCR service ต้องรับ field "file" และตอบ JSON
- *
- * Failure:
- * - non-200 → treat เป็น error (fail-fast)
- * - ไม่มี retry → อาจเพิ่มในอนาคต (transient error)
- *
- * Insight:
- * - เป็น synchronous + network-bound call → latency ขึ้นกับ OCR service
- * - ควรแยกเป็น async job เมื่อ scale
- */
-func (s *InvoiceService) CallOCR(data []byte, filename string) (interface{}, error) {
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	part, err := writer.CreateFormFile("file", filename)
-	if err != nil {
-		return nil, err
-	}
-
-	if _, err := part.Write(data); err != nil {
-		return nil, err
-	}
-	writer.Close()
-
-	req, err := http.NewRequest("POST", s.cfg.OCRServiceURL, body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("OCR service error: %s", resp.Status)
-	}
-
-	var result interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-
-	return result, nil
 }
